@@ -37,7 +37,7 @@ sudo ./setup_zabbix_agent.sh 192.168.1.100 my-database-vm
 
 ## What the script does:
 1. Detects the operating system type.
-2. Installs the official Zabbix repository (defaulting to version 6.4).
+2. Prompts you for the desired Zabbix version (defaults to 6.4) and installs the official Zabbix repository.
 3. Installs the `zabbix-agent` package via `dnf` or `apt`.
 4. Configures `/etc/zabbix/zabbix_agentd.conf` with your Zabbix Server IP (for both active and passive checks) and sets the Hostname.
 5. Starts and enables the `zabbix-agent` service.

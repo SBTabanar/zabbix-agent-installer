@@ -17,8 +17,9 @@ fi
 
 ZABBIX_SERVER=$1
 HOSTNAME=${2:-$(hostname)}
-# Defaulting to Zabbix 6.4, but you can change this if your server is on 7.0
-ZABBIX_VERSION="6.4" 
+
+read -p "Enter the Zabbix Version to install (e.g., 6.4, 7.0) [default: 6.4]: " user_version
+ZABBIX_VERSION=${user_version:-6.4}
 
 echo "Starting Zabbix Agent installation..."
 echo "Zabbix Server: $ZABBIX_SERVER"
