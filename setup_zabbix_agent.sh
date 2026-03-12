@@ -8,22 +8,73 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
-if [ "$#" -lt 1 ]; then
-    echo "Usage: $0 <Zabbix_Server_IP> [Hostname]"
-    echo "Example: $0 192.168.1.100 web-server-01"
-    echo "If [Hostname] is not provided, the system's hostname will be used."
+ZABBIX_SERVER=""
+HOSTNAME=$(hostname)
+ZABBIX_VERSION="6.4"
+AGENT_TYPE="1" # 1 for zabbix-agent, 2 for zabbix-agent2
+HOST_METADATA=""
+INTERACTIVE=1
+
+usage() {
+    echo "Usage: $0 -s <Zabbix_Server_IP> [Options]"
+    echo "Options:"
+    echo "  -s <IP>       Zabbix Server IP (Required)"
+    echo "  -n <name>     Agent Hostname (Default: system hostname)"
+    echo "  -v <version>  Zabbix Version (Default: 6.4)"
+    echo "  -a <1|2>      Agent Type: 1 for zabbix-agent, 2 for zabbix-agent2 (Default: 1)"
+    echo "  -m <metadata> HostMetadata for auto-registration (e.g., 'Linux')"
+    echo "  -q            Quiet/Silent mode (No interactive prompts)"
     exit 1
+}
+
+# Parse command line arguments
+while getopts "s:n:v:a:m:q" opt; do
+  case $opt in
+    s) ZABBIX_SERVER="$OPTARG" ;;
+    n) HOSTNAME="$OPTARG" ;;
+    v) ZABBIX_VERSION="$OPTARG" ;;
+    a) AGENT_TYPE="$OPTARG" ;;
+    m) HOST_METADATA="$OPTARG" ;;
+    q) INTERACTIVE=0 ;;
+    *) usage ;;
+  esac
+done
+
+if [ -z "$ZABBIX_SERVER" ]; then
+    echo "Error: Zabbix Server IP is required."
+    usage
 fi
 
-ZABBIX_SERVER=$1
-HOSTNAME=${2:-$(hostname)}
+if [ "$INTERACTIVE" -eq 1 ]; then
+    read -p "Enter the Zabbix Version to install (e.g., 6.4, 7.0) [current: $ZABBIX_VERSION]: " user_version
+    ZABBIX_VERSION=${user_version:-$ZABBIX_VERSION}
+    
+    read -p "Install Zabbix Agent 1 or 2? (Enter 1 or 2) [current: $AGENT_TYPE]: " user_agent
+    AGENT_TYPE=${user_agent:-$AGENT_TYPE}
+    
+    read -p "Enter HostMetadata for auto-registration (leave blank for none) [current: $HOST_METADATA]: " user_meta
+    HOST_METADATA=${user_meta:-$HOST_METADATA}
+fi
 
-read -p "Enter the Zabbix Version to install (e.g., 6.4, 7.0) [default: 6.4]: " user_version
-ZABBIX_VERSION=${user_version:-6.4}
+AGENT_PACKAGE="zabbix-agent"
+CONF_FILE="/etc/zabbix/zabbix_agentd.conf"
+SERVICE_NAME="zabbix-agent"
 
-echo "Starting Zabbix Agent installation..."
+if [ "$AGENT_TYPE" == "2" ]; then
+    AGENT_PACKAGE="zabbix-agent2"
+    CONF_FILE="/etc/zabbix/zabbix_agent2.conf"
+    SERVICE_NAME="zabbix-agent2"
+fi
+
+echo "=========================================================="
+echo "Starting Zabbix $AGENT_PACKAGE installation..."
 echo "Zabbix Server: $ZABBIX_SERVER"
 echo "Agent Hostname: $HOSTNAME"
+echo "Zabbix Version: $ZABBIX_VERSION"
+if [ -n "$HOST_METADATA" ]; then
+    echo "HostMetadata: $HOST_METADATA"
+fi
+echo "=========================================================="
 
 # Detect Operating System
 if [ -f /etc/os-release ]; then
@@ -37,16 +88,14 @@ fi
 
 install_rhel() {
     echo "Detected RHEL/CentOS/AlmaLinux/Rocky based OS"
-    # Extract major version (e.g., 9 from 9.7)
     MAJOR_VER=${VER%%.*}
     rpm -Uvh "https://repo.zabbix.com/zabbix/${ZABBIX_VERSION}/rhel/${MAJOR_VER}/x86_64/zabbix-release-${ZABBIX_VERSION}-1.el${MAJOR_VER}.noarch.rpm" || true
     dnf clean all
-    dnf install -y zabbix-agent
+    dnf install -y $AGENT_PACKAGE
 }
 
 install_debian() {
     echo "Detected Debian/Ubuntu based OS"
-    # Need wget for Debian based installs
     if ! command -v wget >/dev/null 2>&1; then
         apt update && apt install -y wget
     fi
@@ -60,7 +109,7 @@ install_debian() {
     wget "$REPO_URL" -O zabbix-release.deb
     dpkg -i zabbix-release.deb || true
     apt update
-    apt install -y zabbix-agent
+    apt install -y $AGENT_PACKAGE
     rm -f zabbix-release.deb
 }
 
@@ -74,33 +123,36 @@ else
 fi
 
 # Configure Zabbix Agent
-CONF_FILE="/etc/zabbix/zabbix_agentd.conf"
 if [ -f "$CONF_FILE" ]; then
     echo "Configuring $CONF_FILE..."
     
-    # Backup original config just in case
     cp $CONF_FILE "${CONF_FILE}.bak"
 
-    # Update Server (Passive checks)
+    # Update Server and ServerActive
     sed -i "s/^Server=.*/Server=$ZABBIX_SERVER/" $CONF_FILE
-    
-    # Update ServerActive (Active checks)
     sed -i "s/^ServerActive=.*/ServerActive=$ZABBIX_SERVER/" $CONF_FILE
     
     # Update Hostname
     sed -i "s/^Hostname=.*/Hostname=$HOSTNAME/" $CONF_FILE
-    
-    # Comment out the default HostnameItem if it exists so our Hostname takes precedence
     sed -i "s/^HostnameItem=/# HostnameItem=/" $CONF_FILE
+    
+    # Configure HostMetadata for Auto-registration
+    if [ -n "$HOST_METADATA" ]; then
+        if grep -q "^HostMetadata=" $CONF_FILE; then
+            sed -i "s/^HostMetadata=.*/HostMetadata=$HOST_METADATA/" $CONF_FILE
+        else
+            echo "HostMetadata=$HOST_METADATA" >> $CONF_FILE
+        fi
+    fi
 else
     echo "Error: Configuration file not found at $CONF_FILE. Installation may have failed."
     exit 1
 fi
 
 # Start and enable service
-echo "Starting and enabling zabbix-agent service..."
-systemctl restart zabbix-agent
-systemctl enable zabbix-agent
+echo "Starting and enabling $SERVICE_NAME service..."
+systemctl restart $SERVICE_NAME
+systemctl enable $SERVICE_NAME
 
 # Firewall configuration
 if command -v firewall-cmd >/dev/null 2>&1; then
@@ -116,6 +168,11 @@ fi
 
 echo "=========================================================="
 echo "Zabbix Agent setup complete!"
-echo "Zabbix agent is running and configured to talk to $ZABBIX_SERVER."
-echo "Don't forget to add the host '$HOSTNAME' in your Zabbix Server Web Interface."
+echo "$SERVICE_NAME is running and configured to talk to $ZABBIX_SERVER."
+if [ -n "$HOST_METADATA" ]; then
+    echo "Auto-registration metadata set to: '$HOST_METADATA'."
+    echo "If auto-registration actions are configured on the server, the host will be added automatically."
+else
+    echo "Don't forget to add the host '$HOSTNAME' in your Zabbix Server Web Interface."
+fi
 echo "=========================================================="

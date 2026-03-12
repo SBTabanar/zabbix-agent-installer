@@ -1,8 +1,8 @@
 # Zabbix Agent Auto-Installer
 
-This repository contains a simple, robust Bash script to seamlessly install and configure the Zabbix Agent on Linux servers. 
+This repository contains a robust Bash script to seamlessly install and configure the Zabbix Agent (or Zabbix Agent 2) on Linux servers. 
 
-The script supports both RHEL/CentOS/AlmaLinux and Debian/Ubuntu based distributions. It automatically handles the installation of the Zabbix release repository, the agent package itself, configures the Zabbix server IP, and sets up local firewall rules to allow Zabbix Server communication (port 10050).
+The script supports both RHEL/CentOS/AlmaLinux and Debian/Ubuntu based distributions. It automatically handles the installation of the Zabbix release repository, the agent package, configures the Zabbix server IP, sets up Auto-Registration, and updates local firewall rules to allow Zabbix Server communication (port 10050).
 
 ## Prerequisites
 
@@ -17,32 +17,31 @@ The script supports both RHEL/CentOS/AlmaLinux and Debian/Ubuntu based distribut
    ```bash
    chmod +x setup_zabbix_agent.sh
    ```
-3. Run the script, providing your Zabbix Server IP as the first argument:
-   ```bash
-   sudo ./setup_zabbix_agent.sh <ZABBIX_SERVER_IP>
-   ```
 
-### Specifying a Custom Hostname
-
-By default, the script will configure the agent using the system's current hostname. If you want to configure a specific hostname that matches what you have set up in the Zabbix Server UI, pass it as the second argument:
-
+### Interactive Mode
+By simply providing the server IP, the script will prompt you for the version, agent type, and auto-registration metadata:
 ```bash
-sudo ./setup_zabbix_agent.sh <ZABBIX_SERVER_IP> <CUSTOM_HOSTNAME>
+sudo ./setup_zabbix_agent.sh -s <ZABBIX_SERVER_IP>
 ```
 
-**Example:**
+### Silent / Non-Interactive Mode
+For mass deployments via SSH loops or tools like Ansible, you can use flags to pass all parameters silently.
+
 ```bash
-sudo ./setup_zabbix_agent.sh 192.168.1.100 my-database-vm
+sudo ./setup_zabbix_agent.sh -s 192.168.1.100 -a 2 -v 7.0 -m "Linux-WebServers" -q
 ```
 
-## What the script does:
-1. Detects the operating system type.
-2. Prompts you for the desired Zabbix version (defaults to 6.4) and installs the official Zabbix repository.
-3. Installs the `zabbix-agent` package via `dnf` or `apt`.
-4. Configures `/etc/zabbix/zabbix_agentd.conf` with your Zabbix Server IP (for both active and passive checks) and sets the Hostname.
-5. Starts and enables the `zabbix-agent` service.
-6. Automatically opens port `10050/tcp` in `firewalld` or `ufw` if present.
+**Options:**
+- `-s <IP>`: **(Required)** Zabbix Server IP address.
+- `-n <name>`: Agent Hostname (Defaults to the system's hostname).
+- `-v <version>`: Zabbix Version (e.g., 6.4, 7.0) (Defaults to 6.4).
+- `-a <1|2>`: Agent Type: `1` for standard zabbix-agent, `2` for zabbix-agent2 (Defaults to 1).
+- `-m <metadata>`: HostMetadata for auto-registration (e.g., 'Linux', 'Database'). 
+- `-q`: Quiet/Silent mode. Suppresses all interactive prompts.
 
-## After Installation
+## Features
 
-Go to your Zabbix Server Web Interface and add the Host, ensuring the `Host name` exactly matches the hostname configured by this script, and set the interface to the VM's IP address.
+1. **Agent 2 Support:** Choose between the standard C-based agent or the newer Go-based Zabbix Agent 2.
+2. **Auto-Registration:** If you provide `HostMetadata` via `-m`, the agent will send this to the server. If configured on your Zabbix server, it will automatically add the host without manual intervention in the UI!
+3. **Automated Repositories:** Detects your OS and installs the correct official Zabbix repository.
+4. **Firewall Setup:** Automatically opens port `10050/tcp` in `firewalld` or `ufw` if present.
