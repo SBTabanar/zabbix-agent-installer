@@ -89,28 +89,70 @@ fi
 install_rhel() {
     echo "Detected RHEL/CentOS/AlmaLinux/Rocky based OS"
     MAJOR_VER=${VER%%.*}
-    rpm -Uvh "https://repo.zabbix.com/zabbix/${ZABBIX_VERSION}/rhel/${MAJOR_VER}/x86_64/zabbix-release-${ZABBIX_VERSION}-1.el${MAJOR_VER}.noarch.rpm" || true
+    
+    URLS=(
+        "https://repo.zabbix.com/zabbix/${ZABBIX_VERSION}/release/rhel/${MAJOR_VER}/noarch/zabbix-release-latest.el${MAJOR_VER}.noarch.rpm"
+        "https://repo.zabbix.com/zabbix/${ZABBIX_VERSION}/rhel/${MAJOR_VER}/x86_64/zabbix-release-latest.el${MAJOR_VER}.noarch.rpm"
+        "https://repo.zabbix.com/zabbix/${ZABBIX_VERSION}/rhel/${MAJOR_VER}/x86_64/zabbix-release-${ZABBIX_VERSION}-1.el${MAJOR_VER}.noarch.rpm"
+        "https://repo.zabbix.com/zabbix/${ZABBIX_VERSION}/rhel/${MAJOR_VER}/x86_64/zabbix-release-${ZABBIX_VERSION}-2.el${MAJOR_VER}.noarch.rpm"
+    )
+
+    REPO_INSTALLED=0
+    for url in "${URLS[@]}"; do
+        if curl --output /dev/null --silent --head --fail "$url"; then
+            echo "Found Zabbix repository at: $url"
+            rpm -Uvh "$url" || true
+            REPO_INSTALLED=1
+            break
+        fi
+    done
+
+    if [ $REPO_INSTALLED -eq 0 ]; then
+        echo "Error: Failed to find a valid Zabbix repository URL for version $ZABBIX_VERSION on RHEL $MAJOR_VER."
+        echo "Please verify the version number."
+        exit 1
+    fi
+    
     dnf clean all
     dnf install -y $AGENT_PACKAGE
 }
 
 install_debian() {
     echo "Detected Debian/Ubuntu based OS"
-    if ! command -v wget >/dev/null 2>&1; then
-        apt update && apt install -y wget
+    if ! command -v wget >/dev/null 2>&1 || ! command -v curl >/dev/null 2>&1; then
+        apt update && apt install -y wget curl
     fi
     
-    if [[ "$OS" == "ubuntu" ]]; then
-        REPO_URL="https://repo.zabbix.com/zabbix/${ZABBIX_VERSION}/ubuntu/pool/main/z/zabbix-release/zabbix-release_${ZABBIX_VERSION}-1+ubuntu${VER}_all.deb"
-    else
-        REPO_URL="https://repo.zabbix.com/zabbix/${ZABBIX_VERSION}/debian/pool/main/z/zabbix-release/zabbix-release_${ZABBIX_VERSION}-1+debian${VER}_all.deb"
+    OS_NAME=$OS # ubuntu or debian
+    
+    URLS=(
+        "https://repo.zabbix.com/zabbix/${ZABBIX_VERSION}/release/${OS_NAME}/pool/main/z/zabbix-release/zabbix-release_latest_${ZABBIX_VERSION}+${OS_NAME}${VER}_all.deb"
+        "https://repo.zabbix.com/zabbix/${ZABBIX_VERSION}/${OS_NAME}/pool/main/z/zabbix-release/zabbix-release_latest_${ZABBIX_VERSION}+${OS_NAME}${VER}_all.deb"
+        "https://repo.zabbix.com/zabbix/${ZABBIX_VERSION}/release/${OS_NAME}/pool/main/z/zabbix-release/zabbix-release_latest+${OS_NAME}${VER}_all.deb"
+        "https://repo.zabbix.com/zabbix/${ZABBIX_VERSION}/${OS_NAME}/pool/main/z/zabbix-release/zabbix-release_latest+${OS_NAME}${VER}_all.deb"
+        "https://repo.zabbix.com/zabbix/${ZABBIX_VERSION}/${OS_NAME}/pool/main/z/zabbix-release/zabbix-release_${ZABBIX_VERSION}-1+${OS_NAME}${VER}_all.deb"
+    )
+
+    REPO_INSTALLED=0
+    for url in "${URLS[@]}"; do
+        if curl --output /dev/null --silent --head --fail "$url"; then
+            echo "Found Zabbix repository at: $url"
+            wget "$url" -O zabbix-release.deb
+            dpkg -i zabbix-release.deb || true
+            rm -f zabbix-release.deb
+            REPO_INSTALLED=1
+            break
+        fi
+    done
+
+    if [ $REPO_INSTALLED -eq 0 ]; then
+        echo "Error: Failed to find a valid Zabbix repository URL for version $ZABBIX_VERSION on $OS_NAME $VER."
+        echo "Please verify the version number."
+        exit 1
     fi
     
-    wget "$REPO_URL" -O zabbix-release.deb
-    dpkg -i zabbix-release.deb || true
     apt update
     apt install -y $AGENT_PACKAGE
-    rm -f zabbix-release.deb
 }
 
 if [[ "$OS" == *"almalinux"* || "$OS" == *"rocky"* || "$OS" == *"centos"* || "$OS" == *"rhel"* || "$OS" == *"fedora"* ]]; then
