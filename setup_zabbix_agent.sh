@@ -49,6 +49,9 @@ if [ "$INTERACTIVE" -eq 1 ]; then
     read -p "Enter the Zabbix Version to install (e.g., 6.4, 7.0) [current: $ZABBIX_VERSION]: " user_version
     ZABBIX_VERSION=${user_version:-$ZABBIX_VERSION}
     
+    read -p "Enter the Agent Hostname [current: $HOSTNAME]: " user_hostname
+    HOSTNAME=${user_hostname:-$HOSTNAME}
+
     read -p "Install Zabbix Agent 1 or 2? (Enter 1 or 2) [current: $AGENT_TYPE]: " user_agent
     AGENT_TYPE=${user_agent:-$AGENT_TYPE}
     
